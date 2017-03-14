@@ -63,11 +63,11 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
 - (void)dealloc
 {
     [self resetPlayerItemIfNecessary];
-    
+
     [self removePlayerObservers];
-    
+
     [self removeTimeObserver];
-    
+
     [self cancelFadeVolume];
 }
 
@@ -78,14 +78,12 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         _volumeFadeDuration = DefaultVolumeFadeDuration;
         _playableBufferLength = DefaultPlayableBufferLength;
-        
-        [self setupPlayer];
-        
-        [self addPlayerObservers];
 
-        [self setupAudioSession];
+        [self setupPlayer];
+
+        [self addPlayerObservers];
     }
-    
+
     return self;
 }
 
@@ -94,18 +92,18 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
 - (void)setupPlayer
 {
     self.player = [[AVPlayer alloc] init];
-    
+
     self.muted = NO;
     self.looping = NO;
-    
+
     self.player.usesExternalPlaybackWhileExternalScreenIsActive = YES;
-    
+
     [self setVolume:1.0f];
     [self enableTimeUpdates];
     [self enableAirplay];
 }
 
-- (void)setupAudioSession
+- (void)startAudioSession
 {
     NSError *categoryError = nil;
     BOOL success = [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:&categoryError];
@@ -113,12 +111,21 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         NSLog(@"Error setting audio session category: %@", categoryError);
     }
-    
+
     NSError *activeError = nil;
     success = [[AVAudioSession sharedInstance] setActive:YES error:&activeError];
     if (!success)
     {
         NSLog(@"Error setting audio session active: %@", activeError);
+    }
+}
+
+-(void)stopAudioSession
+{
+    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
+    NSError *error = nil;
+    if (![audioSession setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error]) {
+        NSLog(@"resume music player failed, error=%@", error);
     }
 }
 
@@ -137,7 +144,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     if (!playerItem)
     {
         [self reportUnableToCreatePlayerItem];
-        
+
         return;
     }
 
@@ -150,7 +157,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         return;
     }
-    
+
     [self resetPlayerItemIfNecessary];
 
     [self preparePlayerItem:playerItem];
@@ -164,16 +171,16 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     }
 
     [self resetPlayerItemIfNecessary];
-    
+
     AVPlayerItem *playerItem = [[AVPlayerItem alloc] initWithAsset: asset];
-    
+
     if (!playerItem)
     {
         [self reportUnableToCreatePlayerItem];
-        
+
         return;
     }
-    
+
     [self preparePlayerItem:playerItem];
 }
 
@@ -181,10 +188,15 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
 
 - (void)setMuted:(BOOL)muted
 {
-    if (self.player)
-    {
-        self.player.muted = muted;
-    }
+  if (self.player)
+  {
+      if (muted == YES) {
+          [self stopAudioSession];
+      }else{
+          [self startAudioSession];
+      }
+      self.player.muted = muted;
+  }
 }
 
 - (BOOL)isMuted
@@ -200,9 +212,9 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         return;
     }
-    
+
     self.playing = YES;
-   
+
     if ([self.player.currentItem status] == AVPlayerItemStatusReadyToPlay)
     {
         if ([self isAtEndTime])
@@ -219,7 +231,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
 - (void)pause
 {
     self.playing = NO;
-    
+
     [self.player pause];
 }
 
@@ -229,22 +241,22 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         return;
     }
-    
+
     if (self.player)
     {
         CMTime cmTime = CMTimeMakeWithSeconds(time, self.player.currentTime.timescale);
-        
+
         if (CMTIME_IS_INVALID(cmTime) || self.player.currentItem.status != AVPlayerStatusReadyToPlay)
         {
             return;
         }
-        
+
         _seeking = YES;
-        
+
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            
+
             [self.player seekToTime:cmTime completionHandler:^(BOOL finished) {
-                
+
                 _isAtEndTime = NO;
                 _seeking = NO;
 
@@ -252,7 +264,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
                 {
                     _scrubbing = NO;
                 }
-                
+
             }];
         });
     }
@@ -292,7 +304,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
 - (void)startScrubbing
 {
     self.scrubbing = YES;
-    
+
     if (self.isPlaying)
     {
         self.shouldPlayAfterScrubbing = YES;
@@ -307,9 +319,9 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         [self startScrubbing];
     }
-    
+
     [self.player.currentItem cancelPendingSeeks];
-    
+
     [self seekToTime:time];
 }
 
@@ -330,14 +342,14 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
 - (void)enableTimeUpdates
 {
     self.isTimingUpdateEnabled = YES;
-    
+
     [self addTimeObserver];
 }
 
 - (void)disableTimeUpdates
 {
     self.isTimingUpdateEnabled = NO;
-    
+
     [self removeTimeObserver];
 }
 
@@ -346,7 +358,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
 - (void)setVolume:(float)volume
 {
     [self cancelFadeVolume];
-    
+
     self.player.volume = volume;
 }
 
@@ -362,9 +374,9 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         return;
     }
-    
+
     [self cancelFadeVolume];
-    
+
     if (self.player.volume >= 1.0f - 0.01f)
     {
         self.player.volume = 1.0f;
@@ -372,7 +384,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     else
     {
         self.player.volume += 1.0f/10.0f;
-        
+
         [self performSelector:@selector(fadeInVolume) withObject:nil afterDelay:self.volumeFadeDuration/10.0f];
     }
 }
@@ -383,9 +395,9 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         return;
     }
-    
+
     [self cancelFadeVolume];
-    
+
     if (self.player.volume <= 0.01f)
     {
         self.player.volume = 0.0f;
@@ -393,7 +405,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     else
     {
         self.player.volume -= 1.0f/10.0f;
-        
+
         [self performSelector:@selector(fadeOutVolume) withObject:nil afterDelay:self.volumeFadeDuration/10.0f];
     }
 }
@@ -407,7 +419,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
         NSError *error = [NSError errorWithDomain:kVideoPlayerErrorDomain
                                              code:0
                                          userInfo:@{NSLocalizedDescriptionKey : @"Unable to create AVPlayerItem."}];
-        
+
         [self.delegate videoPlayer:self didFailWithError:error];
     }
 }
@@ -417,15 +429,15 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     if (self.item)
     {
         [self removePlayerItemObservers:self.item];
-        
+
         [self.player replaceCurrentItemWithPlayerItem:nil];
-        
+
         self.item = nil;
     }
-    
+
     _volumeFadeDuration = DefaultVolumeFadeDuration;
     _playableBufferLength = DefaultPlayableBufferLength;
-    
+
     _playing = NO;
     _isAtEndTime = NO;
     _scrubbing = NO;
@@ -434,28 +446,28 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
 - (void)preparePlayerItem:(AVPlayerItem *)playerItem
 {
     NSParameterAssert(playerItem);
-    
+
     self.item = playerItem;
-    
+
     [self addPlayerItemObservers:playerItem];
-    
+
     [self.player replaceCurrentItemWithPlayerItem:playerItem];
 }
 
 - (void)restart
 {
     [self.player seekToTime:kCMTimeZero toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL finished) {
-        
+
         if (finished)
         {
             _isAtEndTime = NO;
-         
+
             if (self.isPlaying)
             {
                 [self play];
             }
         }
-        
+
     }];
 }
 
@@ -467,19 +479,19 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
         {
             return _isAtEndTime;
         }
-        
+
         float currentTime = 0.0f;
         if (CMTIME_IS_INVALID(self.player.currentTime) == NO)
         {
             currentTime = CMTimeGetSeconds(self.player.currentTime);
         }
-        
+
         float videoDuration = 0.0f;
         if (CMTIME_IS_INVALID(self.player.currentItem.duration) == NO)
         {
             videoDuration = CMTimeGetSeconds(self.player.currentItem.duration);
         }
-        
+
         if (currentTime > 0.0f && videoDuration > 0.0f)
         {
             if (fabs(currentTime - videoDuration) <= 0.01f)
@@ -488,28 +500,28 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
             }
         }
     }
-    
+
     return NO;
 }
 
 - (float)calcLoadedDuration
 {
     float loadedDuration = 0.0f;
-    
+
     if (self.player && self.player.currentItem)
     {
         NSArray *loadedTimeRanges = self.player.currentItem.loadedTimeRanges;
-        
+
         if (loadedTimeRanges && [loadedTimeRanges count])
         {
             CMTimeRange timeRange = [[loadedTimeRanges firstObject] CMTimeRangeValue];
             float startSeconds = CMTimeGetSeconds(timeRange.start);
             float durationSeconds = CMTimeGetSeconds(timeRange.duration);
-            
+
             loadedDuration = startSeconds + durationSeconds;
         }
     }
-    
+
     return loadedDuration;
 }
 
@@ -521,7 +533,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
                   forKeyPath:NSStringFromSelector(@selector(isExternalPlaybackActive))
                      options:NSKeyValueObservingOptionNew
                      context:VideoPlayer_PlayerExternalPlaybackActiveContext];
-    
+
     [self.player addObserver:self
                   forKeyPath:NSStringFromSelector(@selector(rate))
                      options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
@@ -540,7 +552,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         NSLog(@"Exception removing observer: %@", exception);
     }
-    
+
     @try
     {
         [self.player removeObserver:self
@@ -561,22 +573,22 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
                  forKeyPath:NSStringFromSelector(@selector(status))
                     options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionOld | NSKeyValueObservingOptionNew
                     context:VideoPlayer_PlayerItemStatusContext];
-    
+
     [playerItem addObserver:self
                  forKeyPath:NSStringFromSelector(@selector(isPlaybackLikelyToKeepUp))
                     options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
                     context:VideoPlayer_PlayerItemPlaybackLikelyToKeepUp];
-    
+
     [playerItem addObserver:self
                  forKeyPath:NSStringFromSelector(@selector(isPlaybackBufferEmpty))
                     options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
                     context:VideoPlayer_PlayerItemPlaybackBufferEmpty];
-    
+
     [playerItem addObserver:self
                  forKeyPath:NSStringFromSelector(@selector(loadedTimeRanges))
                     options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
                     context:VideoPlayer_PlayerItemLoadedTimeRangesContext];
-    
+
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(playerItemDidPlayToEndTime:)
                                                  name:AVPlayerItemDidPlayToEndTimeNotification
@@ -586,7 +598,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
 - (void)removePlayerItemObservers:(AVPlayerItem *)playerItem
 {
     [playerItem cancelPendingSeeks];
-    
+
     @try
     {
         [playerItem removeObserver:self
@@ -630,7 +642,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         NSLog(@"Exception removing observer: %@", exception);
     }
-    
+
     [[NSNotificationCenter defaultCenter] removeObserver:self name:AVPlayerItemDidPlayToEndTimeNotification object:playerItem];
 }
 
@@ -642,21 +654,21 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         return;
     }
-    
+
     __weak typeof (self) weakSelf = self;
     self.timeObserverToken = [self.player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(TimeUpdateInterval, NSEC_PER_SEC) queue:dispatch_get_main_queue() usingBlock:^(CMTime time) {
-        
+
         __strong typeof (self) strongSelf = weakSelf;
         if (!strongSelf)
         {
             return;
         }
-        
+
         if ([strongSelf.delegate respondsToSelector:@selector(videoPlayer:timeDidChange:)])
         {
             [strongSelf.delegate videoPlayer:strongSelf timeDidChange:time];
         }
-        
+
     }];
 }
 
@@ -666,12 +678,12 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         return;
     }
- 
+
     if (self.player)
     {
         [self.player removeTimeObserver:self.timeObserverToken];
     }
-    
+
     self.timeObserverToken = nil;
 }
 
@@ -690,7 +702,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         AVPlayerStatus newStatus = [[change objectForKey:NSKeyValueChangeNewKey] integerValue];
         AVPlayerStatus oldStatus = [[change objectForKey:NSKeyValueChangeOldKey] integerValue];
-        
+
         if (newStatus != oldStatus)
         {
             switch (newStatus)
@@ -708,46 +720,46 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
                             [self.delegate videoPlayerIsReadyToPlayVideo:self];
                         });
                     }
-                    
+
                     if (self.isPlaying)
                     {
                         [self play];
                     }
-                    
+
                     break;
                 }
                 case AVPlayerItemStatusFailed:
                 {
                     NSLog(@"Video player Status Failed: player item error = %@", self.player.currentItem.error);
                     NSLog(@"Video player Status Failed: player error = %@", self.player.error);
-                    
+
                     // First, try to use the player error if it exists
 
                     NSError *error = self.player.error;
-                    
+
                     // Otherwise try to use the current item's error
-                    
+
                     if (!error)
                     {
                         error = self.player.currentItem.error;
                     }
-                    
+
                     // If there's a more specific underlyng error, use that
-                    
+
                     NSError *underlyingError = [error.userInfo objectForKey:NSUnderlyingErrorKey];
-                    
+
                     if (underlyingError)
                     {
                         error = underlyingError;
                     }
 
                     // Finally, construct our own as a last resort
-                    
+
                     if (!error)
                     {
                         error = [NSError errorWithDomain:kVideoPlayerErrorDomain code:0 userInfo:@{NSLocalizedDescriptionKey : @"unknown player error, status == AVPlayerItemStatusFailed"}];
                     }
-                    
+
                     [self reset];
 
                     if ([self.delegate respondsToSelector:@selector(videoPlayer:didFailWithError:)])
@@ -756,7 +768,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
                             [self.delegate videoPlayer:self didFailWithError:error];
                         });
                     }
-                    
+
                     break;
                 }
             }
@@ -764,7 +776,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
         else if (newStatus == AVPlayerItemStatusReadyToPlay)
         {
             // When playback resumes after a buffering event, a new ReadyToPlay status is set [RH]
-            
+
             if ([self.delegate respondsToSelector:@selector(videoPlayerPlaybackLikelyToKeepUp:)])
             {
                 dispatch_async(dispatch_get_main_queue(), ^
@@ -816,11 +828,11 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
                 {
                     self.playableBufferLength = 64;
                 }
-                
+
                 [self play];
             }
         }
-        
+
         if ([self.delegate respondsToSelector:@selector(videoPlayer:loadedTimeRangeDidChange:)])
         {
             [self.delegate videoPlayer:self loadedTimeRangeDidChange:loadedDuration];
@@ -828,7 +840,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     }
     else if (context == VideoPlayer_PlayerExternalPlaybackActiveContext)
     {
-        
+
     }
     else
     {
@@ -842,7 +854,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
     {
         return;
     }
-    
+
     if (self.isLooping)
     {
         [self restart];
@@ -852,7 +864,7 @@ static void *VideoPlayer_PlayerItemLoadedTimeRangesContext = &VideoPlayer_Player
         _isAtEndTime = YES;
         self.playing = NO;
     }
-        
+
     if ([self.delegate respondsToSelector:@selector(videoPlayerDidReachEnd:)])
     {
         [self.delegate videoPlayerDidReachEnd:self];
